@@ -1,26 +1,26 @@
-// utils/emailTemplates/sessionCancelled.js
+// utils/emailTemplates/sessionUpdated.js
 export const generateUpdatedSessionEmail = ({
   fullName,
   session,
   updatedSession,
 }) => {
   return `
-    <div style="direction: rtl; font-family: Arial; padding: 20px;">
-      <h2>שלום ${fullName},</h2>
-      <p>בוצע שינוי באימון שאת/ה רשום/ה אליו</p>
+    <div style="direction: ltr; font-family: Arial, sans-serif; padding: 20px;">
+      <h2>Hello ${fullName},</h2>
+      <p>A change has been made to a class you are registered for:</p>
       <ul>
-        <li><strong>סוג אימון:</strong> ${session.type}</li>
-        <li><strong>תאריך:</strong> ${new Date(session.date).toLocaleDateString("he-IL")}</li>
-        <li><strong>שעה:</strong> ${session.time}</li>
-        <li><strong>מיקום:</strong> ${session.location}</li>
+        <li><strong>Class Type:</strong> ${session.type}</li>
+        <li><strong>Date:</strong> ${new Date(session.date).toLocaleDateString("en-US")}</li>
+        <li><strong>Time:</strong> ${session.time}</li>
+        <li><strong>Location:</strong> ${session.location}</li>
       </ul>
 
-      <p>פרטי האימון המועדכנים הם:</p>
+      <p>The updated class details are:</p>
       <ul>
-        <li><strong>סוג אימון:</strong> ${updatedSession.type}</li>
-        <li><strong>תאריך:</strong> ${new Date(updatedSession.date).toLocaleDateString("he-IL")}</li>
-        <li><strong>שעה:</strong> ${updatedSession.time}</li>
-        <li><strong>מיקום:</strong> ${updatedSession.location}</li>
+        <li><strong>Class Type:</strong> ${updatedSession.type}</li>
+        <li><strong>Date:</strong> ${new Date(updatedSession.date).toLocaleDateString("en-US")}</li>
+        <li><strong>Time:</strong> ${updatedSession.time}</li>
+        <li><strong>Location:</strong> ${updatedSession.location}</li>
       </ul>
     </div>
   `;

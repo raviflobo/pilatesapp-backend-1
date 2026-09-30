@@ -1,16 +1,16 @@
 // utils/emailTemplates/sessionCancelled.js
 export const generateCancelledEmail = ({ fullName, session }) => {
   return `
-    <div style="direction: rtl; font-family: Arial; padding: 20px;">
-      <h2>שלום ${fullName},</h2>
-      <p>ברצוננו לעדכן כי האימון שלך בוטל:</p>
+    <div style="direction: ltr; font-family: Arial, sans-serif; padding: 20px;">
+      <h2>Hello ${fullName},</h2>
+      <p>We would like to inform you that your class has been cancelled:</p>
       <ul>
-        <li><strong>סוג אימון:</strong> ${session.type}</li>
-        <li><strong>תאריך:</strong> ${new Date(session.date).toLocaleDateString("he-IL")}</li>
-        <li><strong>שעה:</strong> ${session.time}</li>
-        <li><strong>מיקום:</strong> ${session.location}</li>
+        <li><strong>Class Type:</strong> ${session.type}</li>
+        <li><strong>Date:</strong> ${new Date(session.date).toLocaleDateString("en-US")}</li>
+        <li><strong>Time:</strong> ${session.time}</li>
+        <li><strong>Location:</strong> ${session.location}</li>
       </ul>
-      <p>נשמח לראותך באימונים הבאים 🙏</p>
+      <p>We look forward to seeing you in upcoming sessions! 🙏</p>
     </div>
   `;
 };

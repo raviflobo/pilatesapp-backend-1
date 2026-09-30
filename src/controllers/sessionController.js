@@ -25,7 +25,7 @@ const checkTrainerClash = async (trainerName, dateStr, timeStr, durationMinutes,
 
   const query = {
     date: { $gte: startOfDay, $lte: endOfDay },
-    status: { $ne: "בוטל" },
+    status: { $nin: ["Cancelled"] },
     "trainer.name": trainerName,
   };
   if (excludeSessionId) {
@@ -73,7 +73,7 @@ export const createSession = async (req, res) => {
     };
   }
 
-  if (!req.body.location) req.body.location = "סטודיו";
+  if (!req.body.location) req.body.location = "Studio";
   if (!req.body.description) {
     req.body.description = `Group ${req.body.type} session focusing on strength, posture, and core control.`;
   }
@@ -93,11 +93,12 @@ export const createSession = async (req, res) => {
   if (req.body.duration <= 0) {
     throw createError(400, "Duration must be greater than 0");
   }
-  if (
-    req.body.status &&
-    !["מתוכנן", "בוטל", "הושלם"].includes(req.body.status)
-  ) {
-    throw createError(400, "Invalid status");
+  if (req.body.status) {
+    if (!["Planned", "Cancelled", "Completed"].includes(req.body.status)) {
+      throw createError(400, "Invalid status");
+    }
+  } else {
+    req.body.status = "Planned";
   }
 
   const selectedDateStr = new Date(req.body.date).toLocaleDateString("en-CA", {
@@ -124,7 +125,9 @@ export const createSession = async (req, res) => {
 // @desc    Auto-complete sessions whose scheduled end time has passed
 export const autoCompletePastSessions = async () => {
   try {
-    const plannedSessions = await Session.find({ status: "מתוכנן" });
+    const plannedSessions = await Session.find({
+      status: "Planned",
+    });
     if (!plannedSessions || plannedSessions.length === 0) return;
 
     const now = new Date();
@@ -151,7 +154,7 @@ export const autoCompletePastSessions = async () => {
     if (sessionIdsToComplete.length > 0) {
       await Session.updateMany(
         { _id: { $in: sessionIdsToComplete } },
-        { $set: { status: "הושלם" } }
+        { $set: { status: "Completed" } }
       );
       console.log(`⏱️ Auto-completed ${sessionIdsToComplete.length} passed sessions.`);
     }
@@ -171,7 +174,7 @@ export const getMyUpcomingSessions = async (req, res) => {
   );
 
   sessions = sessions
-    .filter((s) => s.status === "מתוכנן")
+    .filter((s) => s.status === "Planned")
     .sort((a, b) => {
       const aDateTime = new Date(a.date);
       aDateTime.setHours(
@@ -200,7 +203,7 @@ export const getMyCompletedSessions = async (req, res) => {
   );
 
   sessions = sessions
-    .filter((s) => s.status === "הושלם")
+    .filter((s) => s.status === "Completed")
     .sort((a, b) => {
       const aDateTime = new Date(a.date);
       aDateTime.setHours(
@@ -279,7 +282,7 @@ export const updateSession = async (req, res) => {
   const session = await Session.findById(req.params.id);
 
   if (!session) throw createError(404, "Session not found");
-  if (session.status === "בוטל" || session.status === "הושלם") {
+  if (["Cancelled", "Completed"].includes(session.status)) {
     throw createError(400, "Cannot update a cancelled or completed session");
   }
   if (req.body.duration !== undefined) {
@@ -335,9 +338,9 @@ export const deleteSession = async (req, res) => {
 export const cancelSession = async (req, res) => {
   const session = await Session.findById(req.params.id);
   if (!session) throw createError(404, "Session not found");
-  if (session.status === "בוטל")
+  if (session.status === "Cancelled")
     throw createError(400, "Session already cancelled");
-  session.status = "בוטל";
+  session.status = "Cancelled";
   await session.save();
   res
     .status(200)
@@ -359,7 +362,7 @@ export const registerToSession = async (req, res) => {
 
   const session = await Session.findById(req.params.id);
   if (!session) throw createError(404, "Session not found");
-  if (["הושלם", "בוטל"].includes(session.status))
+  if (["Completed", "Cancelled"].includes(session.status))
     throw createError(
       400,
       "Cannot register to a completed or cancelled session"
@@ -404,7 +407,7 @@ export const getAllSessionsForThisYearFromSelectedDate = async (req, res) => {
   }).populate("participants", "username email fullName phone");
 
   sessions = sessions.filter(
-    (session) => session.status !== "הושלם" && session.status !== "בוטל"
+    (session) => session.status !== "Completed" && session.status !== "Cancelled"
   );
   res.json(sessions);
 };
@@ -428,7 +431,7 @@ export const registerUserToSession = async (req, res) => {
 
   const session = await Session.findById(sessionId);
   if (!session) throw createError(404, "Session not found");
-  if (["הושלם", "בוטל"].includes(session.status))
+  if (["Completed", "Cancelled"].includes(session.status))
     throw createError(
       400,
       "Cannot register to a completed or cancelled session"
@@ -461,7 +464,7 @@ export const createAndRegisterMemberToSession = async (req, res) => {
   const session = await Session.findById(sessionId);
   if (!session) throw createError(404, "Session not found");
 
-  if (["הושלם", "בוטל"].includes(session.status)) {
+  if (["Completed", "Cancelled"].includes(session.status)) {
     throw createError(400, "Cannot register to a completed or cancelled session");
   }
   if (session.participants.length >= session.maxParticipants) {
@@ -538,7 +541,7 @@ export const unregisterUserFromSession = async (req, res) => {
   const session = await Session.findById(sessionId);
   if (!session) throw createError(404, "Session not found");
 
-  if (["הושלם", "בוטל"].includes(session.status)) {
+  if (["Completed", "Cancelled"].includes(session.status)) {
     throw createError(
       400,
       "Cannot unregister from a completed or cancelled session"
@@ -687,11 +690,11 @@ export const rescheduleSession = async (req, res) => {
 export const bulkCreateWeeklyClasses = async (req, res) => {
   const customTemplates = req.body?.templates || req.body?.classes;
   const defaultTemplates = [
-    { time: "07:00", type: "Reformer Core Power", difficulty: "Intermediate", duration: 55, maxParticipants: 8, location: "סטודיו", trainer: { name: "Rotem", bio: "Certified Pilates Master Trainer" }, description: "High-intensity reformer workout targeting core strength and endurance." },
-    { time: "09:00", type: "Classic Mat Pilates", difficulty: "Beginner", duration: 50, maxParticipants: 12, location: "סטודיו", trainer: { name: "Sarah Jenkins", bio: "Classical Pilates Specialist" }, description: "Fundamental mat exercises focusing on alignment and breath control." },
-    { time: "11:00", type: "Reformer Flow & Flex", difficulty: "Beginner", duration: 55, maxParticipants: 8, location: "סטודיו", trainer: { name: "Rotem", bio: "Certified Pilates Master Trainer" }, description: "Dynamic lengthening and flexibility training on the reformer." },
-    { time: "17:30", type: "Tower & Cadillac Stretch", difficulty: "Intermediate", duration: 60, maxParticipants: 8, location: "סטודיו", trainer: { name: "Sarah Jenkins", bio: "Classical Pilates Specialist" }, description: "Full-body elongation utilizing tower springs and cadillac bars." },
-    { time: "19:00", type: "Athletic Reformer", difficulty: "Advanced", duration: 55, maxParticipants: 8, location: "סטודיו", trainer: { name: "Rotem", bio: "Certified Pilates Master Trainer" }, description: "Advanced power flows with resistance for seasoned practitioners." },
+    { time: "07:00", type: "Reformer Core Power", difficulty: "Intermediate", duration: 55, maxParticipants: 8, location: "Studio", trainer: { name: "Rotem", bio: "Certified Pilates Master Trainer" }, description: "High-intensity reformer workout targeting core strength and endurance." },
+    { time: "09:00", type: "Classic Mat Pilates", difficulty: "Beginner", duration: 50, maxParticipants: 12, location: "Studio", trainer: { name: "Sarah Jenkins", bio: "Classical Pilates Specialist" }, description: "Fundamental mat exercises focusing on alignment and breath control." },
+    { time: "11:00", type: "Reformer Flow & Flex", difficulty: "Beginner", duration: 55, maxParticipants: 8, location: "Studio", trainer: { name: "Rotem", bio: "Certified Pilates Master Trainer" }, description: "Dynamic lengthening and flexibility training on the reformer." },
+    { time: "17:30", type: "Tower & Cadillac Stretch", difficulty: "Intermediate", duration: 60, maxParticipants: 8, location: "Studio", trainer: { name: "Sarah Jenkins", bio: "Classical Pilates Specialist" }, description: "Full-body elongation utilizing tower springs and cadillac bars." },
+    { time: "19:00", type: "Athletic Reformer", difficulty: "Advanced", duration: 55, maxParticipants: 8, location: "Studio", trainer: { name: "Rotem", bio: "Certified Pilates Master Trainer" }, description: "Advanced power flows with resistance for seasoned practitioners." },
   ];
 
   const templates = (Array.isArray(customTemplates) && customTemplates.length > 0)
@@ -727,8 +730,8 @@ export const bulkCreateWeeklyClasses = async (req, res) => {
           difficulty: tpl.difficulty || "Beginner",
           trainer: trainerObj,
           description: tpl.description || `Group ${type} session focusing on strength, posture, and core control.`,
-          status: "מתוכנן",
-          location: tpl.location || "סטודיו",
+          status: "Planned",
+          location: tpl.location || "Studio",
           maxParticipants: Number(tpl.maxParticipants || tpl.seats || 8),
         });
         createdSessions.push(session);

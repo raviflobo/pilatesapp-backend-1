@@ -15,12 +15,12 @@ export const notifyParticipantsWhenSessionUpdates = async (
 
   const emailsArray = [];
   // Send emails with updates
-  if (updatedSession.status === "בוטל") {
-    // Send an email for canclelation
+  if (updatedSession.status === "Cancelled") {
+    // Send an email for cancellation
     updatedSession.participants.forEach((user) => {
       emailsArray.push({
         to: user.email,
-        subject: "ביטול אימון",
+        subject: "Class Cancellation Notice",
         html: generateCancelledEmail({
           fullName: user.fullName,
           session: oldSession,
@@ -32,7 +32,7 @@ export const notifyParticipantsWhenSessionUpdates = async (
     updatedSession.participants.forEach((user) => {
       emailsArray.push({
         to: user.email,
-        subject: "עדכון אימון",
+        subject: "Class Schedule Update",
         html: generateUpdatedSessionEmail({
           fullName: user.fullName,
           session: oldSession,

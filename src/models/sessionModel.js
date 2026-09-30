@@ -21,12 +21,12 @@ const sessionSchema = new mongoose.Schema(
     notes: { type: String },
     status: {
       type: String,
-      enum: ["מתוכנן", "בוטל", "הושלם"],
-      default: "מתוכנן",
+      enum: ["Planned", "Cancelled", "Completed"],
+      default: "Planned",
     },
     location: {
       type: String,
-      default: "סטודיו",
+      default: "Studio",
     },
     participants: [
       {
