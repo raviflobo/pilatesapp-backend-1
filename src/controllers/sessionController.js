@@ -181,16 +181,12 @@ export const getMyCompletedSessions = async (req, res) => {
 // @route   GET /api/sessions/all
 // @access  Private/Admin
 export const getPaginatedSessions = async (req, res) => {
-  const page = req.query.page || 1;
-  const limit = req.query.limit || 10;
+  const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
   const search = req.query.search || "";
   const sortField = req.query.sortField || "date";
   const sortOrder = req.query.sortOrder === "desc" ? -1 : 1;
   const skip = (page - 1) * limit;
-
-  if (page < 1 || limit < 1 || limit > 100) {
-    throw createError(400, "Invalid pagination parameters");
-  }
 
   // Free text search
   const filter = {
@@ -205,7 +201,8 @@ export const getPaginatedSessions = async (req, res) => {
 
   const [sessions, total] = await Promise.all([
     Session.find(filter)
-      .populate("participants", "id username email fullName phone")
+      .populate("participants", "_id username email fullName phone")
+      .populate("waitingList", "_id username email fullName phone")
       .sort({ [sortField]: sortOrder })
       .skip(skip)
       .limit(limit),
