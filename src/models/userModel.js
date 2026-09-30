@@ -40,7 +40,6 @@ const userSchema = new mongoose.Schema(
       type: String,
       enum: ["user", "admin", "trainer", "staff"],
       default: "user",
-      select: false,
     },
     subscription: {
       planName: { type: String, default: "Active Membership" },
