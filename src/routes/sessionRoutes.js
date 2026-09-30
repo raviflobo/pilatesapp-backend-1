@@ -29,55 +29,55 @@ const router = Router();
 router.post(
   "/create",
   protect,
-  authorizeRoles("admin", "staff"),
+  authorizeRoles("admin", "staff", "trainer"),
   asyncHandler(createSession)
 ); // Admin/Staff - Create a new session
 router.get(
   "/all",
   protect,
-  authorizeRoles("admin", "staff"),
+  authorizeRoles("admin", "staff", "trainer"),
   asyncHandler(getPaginatedSessions)
 ); // Admin/Staff - Get all sessions
 router.put(
   "/update/:id",
   protect,
-  authorizeRoles("admin", "staff"),
+  authorizeRoles("admin", "staff", "trainer"),
   asyncHandler(updateSession)
 ); // Admin/Staff - Update a session by ID
 router.delete(
   "/delete/:id",
   protect,
-  authorizeRoles("admin"),
+  authorizeRoles("admin", "staff", "trainer"),
   asyncHandler(deleteSession)
 ); // Admin - Delete a session by ID
 router.post(
   "/register/:sessionId/:username",
   protect,
-  authorizeRoles("admin", "staff"),
+  authorizeRoles("admin", "staff", "trainer"),
   asyncHandler(registerUserToSession)
 ); // Admin/Staff - Register a user to a session
 router.post(
   "/create-and-register/:sessionId",
   protect,
-  authorizeRoles("admin", "staff"),
+  authorizeRoles("admin", "staff", "trainer"),
   asyncHandler(createAndRegisterMemberToSession)
 ); // Admin/Staff - Create new member and register directly to session
 router.post(
   "/unregister/:sessionId/:userId",
   protect,
-  authorizeRoles("admin", "staff"),
+  authorizeRoles("admin", "staff", "trainer"),
   asyncHandler(unregisterUserFromSession)
 ); // Admin/Staff - Unregister a user from a session
 router.put(
   "/cancel/:id/",
   protect,
-  authorizeRoles("admin", "staff"),
+  authorizeRoles("admin", "staff", "trainer"),
   asyncHandler(cancelSession)
 ); // Admin/Staff - Cancel a session by ID
 router.post(
   "/bulk-create-week",
   protect,
-  authorizeRoles("admin", "staff"),
+  authorizeRoles("admin", "staff", "trainer"),
   asyncHandler(bulkCreateWeeklyClasses)
 ); // Admin/Staff - Create 7 days of classes at once
 

@@ -473,8 +473,25 @@ export const createAndRegisterMemberToSession = async (req, res) => {
 export const unregisterUserFromSession = async (req, res) => {
   const { sessionId, userId } = req.params;
 
-  if (!mongoose.Types.ObjectId.isValid(userId)) {
-    throw createError(400, "Invalid user ID");
+  let userObjectId = null;
+  if (mongoose.Types.ObjectId.isValid(userId)) {
+    userObjectId = new mongoose.Types.ObjectId(userId);
+  } else {
+    const trimmed = (userId || "").trim();
+    const foundUser = await User.findOne({
+      $or: [
+        { username: trimmed },
+        { phone: trimmed },
+        { email: trimmed.toLowerCase() },
+      ],
+    });
+    if (foundUser) {
+      userObjectId = foundUser._id;
+    }
+  }
+
+  if (!userObjectId) {
+    throw createError(400, "Invalid member ID, phone, or username");
   }
 
   const session = await Session.findById(sessionId);
@@ -486,8 +503,6 @@ export const unregisterUserFromSession = async (req, res) => {
       "Cannot unregister from a completed or cancelled session"
     );
   }
-
-  const userObjectId = new mongoose.Types.ObjectId(userId);
 
   const isRegistered = session.participants.some((id) =>
     id.equals(userObjectId)
@@ -502,7 +517,7 @@ export const unregisterUserFromSession = async (req, res) => {
 
   res
     .status(200)
-    .json({ message: "User unregistered successfully", session: session });
+    .json({ message: "Member removed from class successfully", session: session });
 };
 
 // @desc    Join class waiting list
