@@ -53,13 +53,36 @@ const checkTrainerClash = async (trainerName, dateStr, timeStr, durationMinutes,
 // @route   POST /api/sessions/create
 // @access  Private/Admin
 export const createSession = async (req, res) => {
-  console.log("Creating session with data:", req.body);
+  if (typeof req.body.trainer === "string") {
+    req.body.trainer = {
+      name: req.body.trainer,
+      bio: "Certified Pilates Instructor",
+      photo: "/RotemLogo.png",
+    };
+  } else if (req.body.trainerName) {
+    req.body.trainer = {
+      name: req.body.trainerName,
+      bio: req.body.trainerBio || "Certified Pilates Instructor",
+      photo: "/RotemLogo.png",
+    };
+  } else if (!req.body.trainer || !req.body.trainer.name) {
+    req.body.trainer = {
+      name: "Sarah Jenkins",
+      bio: "Certified Classical Pilates Master",
+      photo: "/RotemLogo.png",
+    };
+  }
+
+  if (!req.body.location) req.body.location = "סטודיו";
+  if (!req.body.description) {
+    req.body.description = `Group ${req.body.type} session focusing on strength, posture, and core control.`;
+  }
+
   if (
     !req.body.date ||
     !req.body.time ||
     !req.body.type ||
     !req.body.duration ||
-    !req.body.location ||
     !req.body.maxParticipants
   ) {
     throw createError(400, "All fields are required");
@@ -603,13 +626,18 @@ export const rescheduleSession = async (req, res) => {
 // @route   POST /api/sessions/bulk-create-week
 // @access  Private/Admin
 export const bulkCreateWeeklyClasses = async (req, res) => {
-  const templates = [
-    { time: "07:00", type: "Reformer Core Power", difficulty: "Intermediate", duration: 55, maxParticipants: 8, location: "סטודיו" },
-    { time: "09:00", type: "Classic Mat Pilates", difficulty: "Beginner", duration: 50, maxParticipants: 12, location: "סטודיו" },
-    { time: "11:00", type: "Reformer Flow & Flex", difficulty: "Beginner", duration: 55, maxParticipants: 8, location: "סטודיו" },
-    { time: "17:30", type: "Tower & Cadillac Stretch", difficulty: "Intermediate", duration: 60, maxParticipants: 8, location: "סטודיו" },
-    { time: "19:00", type: "Athletic Reformer", difficulty: "Advanced", duration: 55, maxParticipants: 8, location: "סטודיו" },
+  const customTemplates = req.body?.templates || req.body?.classes;
+  const defaultTemplates = [
+    { time: "07:00", type: "Reformer Core Power", difficulty: "Intermediate", duration: 55, maxParticipants: 8, location: "סטודיו", trainer: { name: "Rotem", bio: "Certified Pilates Master Trainer" }, description: "High-intensity reformer workout targeting core strength and endurance." },
+    { time: "09:00", type: "Classic Mat Pilates", difficulty: "Beginner", duration: 50, maxParticipants: 12, location: "סטודיו", trainer: { name: "Sarah Jenkins", bio: "Classical Pilates Specialist" }, description: "Fundamental mat exercises focusing on alignment and breath control." },
+    { time: "11:00", type: "Reformer Flow & Flex", difficulty: "Beginner", duration: 55, maxParticipants: 8, location: "סטודיו", trainer: { name: "Rotem", bio: "Certified Pilates Master Trainer" }, description: "Dynamic lengthening and flexibility training on the reformer." },
+    { time: "17:30", type: "Tower & Cadillac Stretch", difficulty: "Intermediate", duration: 60, maxParticipants: 8, location: "סטודיו", trainer: { name: "Sarah Jenkins", bio: "Classical Pilates Specialist" }, description: "Full-body elongation utilizing tower springs and cadillac bars." },
+    { time: "19:00", type: "Athletic Reformer", difficulty: "Advanced", duration: 55, maxParticipants: 8, location: "סטודיו", trainer: { name: "Rotem", bio: "Certified Pilates Master Trainer" }, description: "Advanced power flows with resistance for seasoned practitioners." },
   ];
+
+  const templates = (Array.isArray(customTemplates) && customTemplates.length > 0)
+    ? customTemplates
+    : defaultTemplates;
 
   const createdSessions = [];
   const today = new Date();
@@ -620,29 +648,29 @@ export const bulkCreateWeeklyClasses = async (req, res) => {
     const dateStr = classDate.toISOString().split("T")[0];
 
     for (const tpl of templates) {
-      // Check if session at this date & time already exists
+      const type = tpl.type || tpl.name;
+      const trainerObj = typeof tpl.trainer === "string"
+        ? { name: tpl.trainer, bio: "Certified Pilates Instructor", photo: "/RotemLogo.png" }
+        : (tpl.trainer || { name: "Sarah Jenkins", bio: "Certified Pilates Instructor", photo: "/RotemLogo.png" });
+
       const exists = await Session.findOne({
         date: new Date(dateStr),
         time: tpl.time,
-        type: tpl.type,
+        type: type,
       });
 
       if (!exists) {
         const session = await Session.create({
           date: new Date(dateStr),
           time: tpl.time,
-          duration: tpl.duration,
-          type: tpl.type,
-          difficulty: tpl.difficulty,
-          trainer: {
-            name: "Rotem",
-            bio: "Certified Pilates & Mindfulness Master Trainer",
-            photo: "/RotemLogo.png",
-          },
-          description: `Group ${tpl.type} session tailored for ${tpl.difficulty} level students. Focus on balance, breathing, and core stability.`,
+          duration: Number(tpl.duration || 55),
+          type: type,
+          difficulty: tpl.difficulty || "Beginner",
+          trainer: trainerObj,
+          description: tpl.description || `Group ${type} session focusing on strength, posture, and core control.`,
           status: "מתוכנן",
-          location: tpl.location,
-          maxParticipants: tpl.maxParticipants,
+          location: tpl.location || "סטודיו",
+          maxParticipants: Number(tpl.maxParticipants || tpl.seats || 8),
         });
         createdSessions.push(session);
       }
