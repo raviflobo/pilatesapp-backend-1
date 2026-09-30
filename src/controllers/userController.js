@@ -8,26 +8,48 @@ import User from "../models/userModel.js";
 // @route   POST /api/users/create
 // @access  Public
 export const createUser = async (req, res) => {
-  const { username, fullName, email, password, birthDate, gender } = req.body;
-  if (!username || !fullName || !email || !password || !birthDate || !gender) {
-    throw createError(400, "All fields are required");
+  const { username, fullName, email, password, birthDate, gender, phone, subscription, role } = req.body;
+  if (!fullName || (!username && !phone && !email)) {
+    throw createError(400, "Full Name and Phone or Email are required");
   }
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) throw createError(400, "Invalid email format");
-  if (await User.findOne({ email }))
-    throw createError(400, "User already exists");
+  const cleanPhone = phone ? String(phone).trim() : "";
+  const cleanEmail = email ? String(email).toLowerCase().trim() : "";
+  const finalUsername = (username ? String(username).trim() : (cleanPhone || cleanEmail.split("@")[0])).toLowerCase();
+
+  if (cleanEmail) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) throw createError(400, "Invalid email format");
+    const emailExists = await User.findOne({ email: cleanEmail });
+    if (emailExists) throw createError(400, "User with this email already exists");
+  }
+  if (cleanPhone) {
+    const phoneExists = await User.findOne({ phone: cleanPhone });
+    if (phoneExists) throw createError(400, "User with this phone number already exists");
+  }
+  const userExists = await User.findOne({ username: finalUsername });
+  if (userExists) {
+    throw createError(400, "Username already exists");
+  }
+
   const salt = await bcrypt.genSalt(10);
-  const hash = await bcrypt.hash(password, salt);
+  const hash = await bcrypt.hash(password || "Member123!", salt);
   const user = await User.create({
-    username,
-    fullName,
-    email,
+    username: finalUsername,
+    fullName: fullName.trim(),
+    email: cleanEmail || `${finalUsername}@pilates.com`,
+    phone: cleanPhone,
     password: hash,
-    birthDate,
-    gender,
-    role: "user",
+    birthDate: birthDate ? new Date(birthDate) : new Date("1995-01-01"),
+    gender: gender || "female",
+    role: role || "user",
+    subscription: subscription || {
+      planName: "Active Membership",
+      startDate: new Date(),
+      endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      isActive: true,
+    },
   });
-  res.status(201).json({ message: "User created successfully!", user });
+  res.status(201).json({ message: "Member created successfully!", user });
 };
 
 // @desc    Get all users

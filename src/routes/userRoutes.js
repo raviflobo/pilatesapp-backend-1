@@ -41,8 +41,8 @@ router.put(
 router.delete(
   "/delete/:id",
   protect,
-  authorizeRoles("admin"),
+  authorizeRoles("admin", "staff"),
   asyncHandler(deleteUser)
-); // Admin - Delete a specific user by ID
+); // Admin/Staff - Delete a specific user by ID
 
 export default router;

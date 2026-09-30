@@ -205,7 +205,7 @@ export const getPaginatedSessions = async (req, res) => {
 
   const [sessions, total] = await Promise.all([
     Session.find(filter)
-      .populate("participants", "id username email fullName")
+      .populate("participants", "id username email fullName phone")
       .sort({ [sortField]: sortOrder })
       .skip(skip)
       .limit(limit),
@@ -264,7 +264,7 @@ export const updateSession = async (req, res) => {
   Object.assign(session, req.body);
   await session.save();
   const updated = await Session.findById(req.params.id)
-    .populate("participants", "fullName username email")
+    .populate("participants", "fullName username email phone")
     .exec();
 
   // Sending an email
@@ -373,8 +373,18 @@ export const getAllSessionsForThisYearFromSelectedDate = async (req, res) => {
 // @access  Private/Admin
 export const registerUserToSession = async (req, res) => {
   const { sessionId, username } = req.params;
-  const userId = (await User.findOne({ username }).select("_id"))?._id;
-  if (!userId) throw createError(404, "User not found");
+  const identifier = decodeURIComponent(username).trim();
+  const user = await User.findOne({
+    $or: [
+      { username: identifier },
+      { phone: identifier },
+      { email: identifier.toLowerCase() },
+    ],
+  }).select("_id fullName username phone email");
+
+  if (!user) throw createError(404, "Member not found with that mobile number or username");
+  const userId = user._id;
+
   const session = await Session.findById(sessionId);
   if (!session) throw createError(404, "Session not found");
   if (["הושלם", "בוטל"].includes(session.status))
@@ -389,11 +399,11 @@ export const registerUserToSession = async (req, res) => {
     throw createError(400, "Session is full");
   session.participants.push(userId);
   await session.save();
-  await session.populate("participants", "fullName username email");
+  await session.populate("participants", "fullName username email phone");
 
   res
     .status(200)
-    .json({ message: "User registered successfully", session: session });
+    .json({ message: "Member registered successfully", session: session, member: user });
 };
 
 // @desc    Staff / Admin - Create a new member and register directly to session
@@ -448,7 +458,7 @@ export const createAndRegisterMemberToSession = async (req, res) => {
 
   session.participants.push(member._id);
   await session.save();
-  await session.populate("participants", "fullName username email");
+  await session.populate("participants", "fullName username email phone");
 
   res.status(201).json({
     message: "New member created and registered to class successfully!",
@@ -488,7 +498,7 @@ export const unregisterUserFromSession = async (req, res) => {
 
   session.participants.pull(userObjectId);
   await session.save();
-  await session.populate("participants", "fullName username email");
+  await session.populate("participants", "fullName username email phone");
 
   res
     .status(200)
