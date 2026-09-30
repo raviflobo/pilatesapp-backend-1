@@ -310,13 +310,6 @@ export const cancelSession = async (req, res) => {
 export const registerToSession = async (req, res) => {
   console.log("Registering user to session:", req.params.id);
 
-  if (req.user && ["staff", "admin", "trainer"].includes(req.user.role)) {
-    throw createError(
-      403,
-      "Staff members cannot book classes for themselves. Use 'Add Member' to register a member for this class."
-    );
-  }
-
   const session = await Session.findById(req.params.id);
   if (!session) throw createError(404, "Session not found");
   if (["הושלם", "בוטל"].includes(session.status))
@@ -509,13 +502,6 @@ export const unregisterUserFromSession = async (req, res) => {
 // @route   POST /api/sessions/waitlist/:id
 // @access  Private
 export const joinWaitingList = async (req, res) => {
-  if (req.user && ["staff", "admin", "trainer"].includes(req.user.role)) {
-    throw createError(
-      403,
-      "Staff members cannot join class waiting lists."
-    );
-  }
-
   const session = await Session.findById(req.params.id);
   if (!session) throw createError(404, "Session not found");
 
