@@ -80,7 +80,7 @@ export const getAllUsers = async (req, res) => {
 
   const [users, total] = await Promise.all([
     User.find(filter)
-      .select("-password +role")
+      .select("-password")
       .sort({ [sortField]: sortOrder })
       .skip(skip)
       .limit(limit),
@@ -99,7 +99,7 @@ export const getAllUsers = async (req, res) => {
 // @route   GET /api/users/get
 // @access  Private
 export const getAuthenticatedUserById = async (req, res) => {
-  const user = await User.findById(req.user.id).select("-password +role");
+  const user = await User.findById(req.user.id).select("-password");
   if (!user) throw createError(404, "User not found");
   res.json(user);
 };
@@ -108,7 +108,7 @@ export const getAuthenticatedUserById = async (req, res) => {
 // @route   GET /api/users/:id
 // @access  Private/Admin
 export const getUserById = async (req, res) => {
-  const user = await User.findById(req.params.id).select("-password +role");
+  const user = await User.findById(req.params.id).select("-password");
   if (!user) throw createError(404, "User not found");
   res.json(user);
 };
@@ -118,7 +118,7 @@ export const getUserById = async (req, res) => {
 // @access  Private/Admin
 export const updateUser = async (req, res) => {
   /* ---------- ❶ locate user ---------- */
-  const user = await User.findById(req.params.id).select("+role"); // role is normally hidden
+  const user = await User.findById(req.params.id);
   if (!user) throw createError(404, "User not found");
 
   /* ---------- ❷ sanitise payload ---------- */
@@ -147,7 +147,7 @@ export const updateUser = async (req, res) => {
   await user.save();
 
   // Re-fetch WITHOUT the password field and send back to client
-  const updated = await User.findById(user._id).select("-password +role");
+  const updated = await User.findById(user._id).select("-password");
 
   res.status(200).json({
     message: "User updated successfully",
