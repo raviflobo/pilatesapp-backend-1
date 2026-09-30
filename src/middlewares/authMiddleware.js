@@ -4,7 +4,11 @@ import User from "../models/userModel.js";
 
 export const protect = async (req, res, next) => {
   try {
-    const accessToken = req.cookies.accessToken;
+    let accessToken = req.cookies?.accessToken;
+
+    if (!accessToken && req.headers?.authorization && req.headers.authorization.startsWith("Bearer ")) {
+      accessToken = req.headers.authorization.split(" ")[1];
+    }
 
     if (!accessToken) {
       return res.status(401).json({ message: "No access token provided" });

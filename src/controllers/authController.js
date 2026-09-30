@@ -206,8 +206,11 @@ export const loginUser = async (req, res) => {
 // @route   POST /api/auth/logout
 // @access  Private
 export const logoutUser = async (req, res) => {
-  const accessTokenCookies = req.cookies.accessToken;
-  const refreshTokenCookies = req.cookies.refreshToken;
+  let accessTokenCookies = req.cookies?.accessToken;
+  if (!accessTokenCookies && req.headers?.authorization && req.headers.authorization.startsWith("Bearer ")) {
+    accessTokenCookies = req.headers.authorization.split(" ")[1];
+  }
+  const refreshTokenCookies = req.cookies?.refreshToken || req.body?.refreshToken;
 
   if (!accessTokenCookies && !refreshTokenCookies) {
     res.status(200).json({ message: "Already logged out" });
@@ -253,8 +256,11 @@ export const logoutUser = async (req, res) => {
 // @route   GET /api/auth/checkauth
 // @access  Public
 export const checkIfUserAuthenticated = async (req, res) => {
-  const accessToken = req.cookies.accessToken;
-  const refreshToken = req.cookies.refreshToken;
+  let accessToken = req.cookies?.accessToken;
+  if (!accessToken && req.headers?.authorization && req.headers.authorization.startsWith("Bearer ")) {
+    accessToken = req.headers.authorization.split(" ")[1];
+  }
+  const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
   const token = accessToken || refreshToken;
 
   if (!token) throw createError(401, "Not authenticated");
