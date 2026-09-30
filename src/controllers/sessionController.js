@@ -121,13 +121,53 @@ export const createSession = async (req, res) => {
   res.status(201).json(session);
 };
 
+// @desc    Auto-complete sessions whose scheduled end time has passed
+export const autoCompletePastSessions = async () => {
+  try {
+    const plannedSessions = await Session.find({ status: "מתוכנן" });
+    if (!plannedSessions || plannedSessions.length === 0) return;
+
+    const now = new Date();
+    const sessionIdsToComplete = [];
+
+    for (const s of plannedSessions) {
+      if (!s.date || !s.time) continue;
+      const d = new Date(s.date);
+      const y = d.getUTCFullYear();
+      const m = d.getUTCMonth();
+      const day = d.getUTCDate();
+      const [h, min] = s.time.split(":").map(Number);
+      const duration = Number(s.duration) || 60;
+
+      // Construct class end time
+      const endTime = new Date(y, m, day, h, min + duration, 0, 0);
+
+      // If class end time has passed
+      if (now.getTime() >= endTime.getTime()) {
+        sessionIdsToComplete.push(s._id);
+      }
+    }
+
+    if (sessionIdsToComplete.length > 0) {
+      await Session.updateMany(
+        { _id: { $in: sessionIdsToComplete } },
+        { $set: { status: "הושלם" } }
+      );
+      console.log(`⏱️ Auto-completed ${sessionIdsToComplete.length} passed sessions.`);
+    }
+  } catch (err) {
+    console.error("Error auto-completing sessions:", err);
+  }
+};
+
 // @desc    Get all upcoming sessions for user
 // @route   GET /api/sessions/myupcoming
 // @access  Private
 export const getMyUpcomingSessions = async (req, res) => {
+  await autoCompletePastSessions();
   let sessions = await Session.find({ participants: req.user._id }).populate(
     "participants",
-    "username email fullName"
+    "username email fullName phone"
   );
 
   sessions = sessions
@@ -153,9 +193,10 @@ export const getMyUpcomingSessions = async (req, res) => {
 // @route   GET /api/sessions/mycompleted
 // @access  Private
 export const getMyCompletedSessions = async (req, res) => {
+  await autoCompletePastSessions();
   let sessions = await Session.find({ participants: req.user._id }).populate(
     "participants",
-    "username email fullName"
+    "username email fullName phone"
   );
 
   sessions = sessions
@@ -181,6 +222,7 @@ export const getMyCompletedSessions = async (req, res) => {
 // @route   GET /api/sessions/all
 // @access  Private/Admin
 export const getPaginatedSessions = async (req, res) => {
+  await autoCompletePastSessions();
   const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
   const search = req.query.search || "";
@@ -221,9 +263,10 @@ export const getPaginatedSessions = async (req, res) => {
 // @route   GET /api/sessions/:id
 // @access  Private
 export const getSessionById = async (req, res) => {
+  await autoCompletePastSessions();
   const session = await Session.findById(req.params.id).populate(
     "participants",
-    "username email"
+    "username email fullName phone"
   );
   if (!session) throw createError(404, "Session not found");
   res.json(session);
@@ -351,6 +394,7 @@ export const unregisterFromSession = async (req, res) => {
 // @route   GET /api/sessions/soon
 // @access  Private
 export const getAllSessionsForThisYearFromSelectedDate = async (req, res) => {
+  await autoCompletePastSessions();
   const date = req.query.date ? new Date(req.query.date) : new Date();
   const year = isNaN(date.getTime()) ? new Date().getFullYear() : date.getFullYear();
   const start = new Date(`${year}-01-01T00:00:00Z`);

@@ -62,6 +62,12 @@ app.use(generalLimiter);
 await connectDB(); // Connect to MongoDB
 await connectRedis(); // Connect to Redis
 
+// Auto-complete classes whose end time has passed (run on startup and every 60s)
+import("./controllers/sessionController.js").then(({ autoCompletePastSessions }) => {
+  autoCompletePastSessions();
+  setInterval(autoCompletePastSessions, 60 * 1000);
+});
+
 // Notify the server is running
 app.get("/", (req, res) => {
   res.send("Server is running...");
