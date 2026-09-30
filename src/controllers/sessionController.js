@@ -2,9 +2,52 @@
 
 import createError from "http-errors";
 import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
 import Session from "../models/sessionModel.js";
 import User from "../models/userModel.js";
 import { notifyParticipantsWhenSessionUpdates } from "../services/emailService.js";
+
+// @desc    Create a new session
+// @route   POST /api/sessions/create
+// Helper to check for overlapping trainer schedules
+const checkTrainerClash = async (trainerName, dateStr, timeStr, durationMinutes, excludeSessionId = null) => {
+  if (!trainerName || !dateStr || !timeStr) return;
+
+  const sessionDate = new Date(dateStr);
+  const startOfDay = new Date(sessionDate);
+  startOfDay.setUTCHours(0, 0, 0, 0);
+  const endOfDay = new Date(sessionDate);
+  endOfDay.setUTCHours(23, 59, 59, 999);
+
+  const [h, m] = timeStr.split(":").map(Number);
+  const newStartMinutes = h * 60 + m;
+  const newEndMinutes = newStartMinutes + Number(durationMinutes || 55);
+
+  const query = {
+    date: { $gte: startOfDay, $lte: endOfDay },
+    status: { $ne: "בוטל" },
+    "trainer.name": trainerName,
+  };
+  if (excludeSessionId) {
+    query._id = { $ne: excludeSessionId };
+  }
+
+  const existingSessions = await Session.find(query);
+
+  for (const ses of existingSessions) {
+    if (!ses.time) continue;
+    const [eh, em] = ses.time.split(":").map(Number);
+    const existingStart = eh * 60 + em;
+    const existingEnd = existingStart + Number(ses.duration || 55);
+
+    if (newStartMinutes < existingEnd && newEndMinutes > existingStart) {
+      throw createError(
+        400,
+        `Trainer clash: ${trainerName} is already scheduled for another class at ${ses.time} (${ses.type})`
+      );
+    }
+  }
+};
 
 // @desc    Create a new session
 // @route   POST /api/sessions/create
@@ -43,6 +86,12 @@ export const createSession = async (req, res) => {
 
   if (selectedDateStr < todayJerusalemStr) {
     throw createError(400, "Cannot create a session in the past");
+  }
+
+  // Trainer clash validation
+  const trainerName = req.body.trainer?.name;
+  if (trainerName) {
+    await checkTrainerClash(trainerName, req.body.date, req.body.time, req.body.duration);
   }
 
   const session = await Session.create(req.body);
@@ -177,6 +226,15 @@ export const updateSession = async (req, res) => {
     req.body.maxParticipants = Number(req.body.maxParticipants);
   }
 
+  // Trainer clash validation
+  const trainerName = req.body.trainer?.name || session.trainer?.name;
+  const dateStr = req.body.date || session.date;
+  const timeStr = req.body.time || session.time;
+  const duration = req.body.duration || session.duration;
+  if (trainerName) {
+    await checkTrainerClash(trainerName, dateStr, timeStr, duration, session._id);
+  }
+
   // Create a shallow copy for sending an email
   const oldSession = session.toObject();
 
@@ -228,6 +286,14 @@ export const cancelSession = async (req, res) => {
 // @access  Private
 export const registerToSession = async (req, res) => {
   console.log("Registering user to session:", req.params.id);
+
+  if (req.user && ["staff", "admin", "trainer"].includes(req.user.role)) {
+    throw createError(
+      403,
+      "Staff members cannot book classes for themselves. Use 'Add Member' to register a member for this class."
+    );
+  }
+
   const session = await Session.findById(req.params.id);
   if (!session) throw createError(404, "Session not found");
   if (["הושלם", "בוטל"].includes(session.status))
@@ -265,8 +331,8 @@ export const unregisterFromSession = async (req, res) => {
 // @route   GET /api/sessions/soon
 // @access  Private
 export const getAllSessionsForThisYearFromSelectedDate = async (req, res) => {
-  const date = new Date(req.query.date);
-  const year = date.getFullYear();
+  const date = req.query.date ? new Date(req.query.date) : new Date();
+  const year = isNaN(date.getTime()) ? new Date().getFullYear() : date.getFullYear();
   const start = new Date(`${year}-01-01T00:00:00Z`);
   const end = new Date(`${year + 1}-01-01T00:00:00Z`);
   let sessions = await Session.find({
@@ -307,6 +373,67 @@ export const registerUserToSession = async (req, res) => {
     .json({ message: "User registered successfully", session: session });
 };
 
+// @desc    Staff / Admin - Create a new member and register directly to session
+// @route   POST /api/sessions/create-and-register/:sessionId
+// @access  Private (Admin / Staff)
+export const createAndRegisterMemberToSession = async (req, res) => {
+  const { sessionId } = req.params;
+  const { username, fullName, email, password, birthDate, gender } = req.body;
+
+  if (!username || !fullName || !email) {
+    throw createError(400, "Full Name, Username, and Email are required");
+  }
+
+  const session = await Session.findById(sessionId);
+  if (!session) throw createError(404, "Session not found");
+
+  if (["הושלם", "בוטל"].includes(session.status)) {
+    throw createError(400, "Cannot register to a completed or cancelled session");
+  }
+  if (session.participants.length >= session.maxParticipants) {
+    throw createError(400, "Session is full");
+  }
+
+  // Check if member already exists
+  let member = await User.findOne({
+    $or: [{ username: username.trim() }, { email: email.toLowerCase().trim() }],
+  });
+
+  if (!member) {
+    const salt = await bcrypt.genSalt(10);
+    const hash = await bcrypt.hash(password || "Member123!", salt);
+    member = await User.create({
+      username: username.trim(),
+      fullName: fullName.trim(),
+      email: email.toLowerCase().trim(),
+      password: hash,
+      birthDate: birthDate ? new Date(birthDate) : new Date("1995-01-01"),
+      gender: gender || "female",
+      role: "user",
+      subscription: {
+        planName: "Active Membership",
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        isActive: true,
+      },
+    });
+  }
+
+  if (session.participants.includes(member._id)) {
+    throw createError(400, "Member is already registered to this session");
+  }
+
+  session.participants.push(member._id);
+  await session.save();
+  await session.populate("participants", "fullName username email");
+
+  res.status(201).json({
+    message: "New member created and registered to class successfully!",
+    member,
+    session,
+  });
+};
+
 // @desc    Unregister a user from a session
 // @route   POST /api/sessions/unregister/:sessionId/:userId
 // @access  Private/Admin
@@ -343,4 +470,188 @@ export const unregisterUserFromSession = async (req, res) => {
   res
     .status(200)
     .json({ message: "User unregistered successfully", session: session });
+};
+
+// @desc    Join class waiting list
+// @route   POST /api/sessions/waitlist/:id
+// @access  Private
+export const joinWaitingList = async (req, res) => {
+  if (req.user && ["staff", "admin", "trainer"].includes(req.user.role)) {
+    throw createError(
+      403,
+      "Staff members cannot join class waiting lists."
+    );
+  }
+
+  const session = await Session.findById(req.params.id);
+  if (!session) throw createError(404, "Session not found");
+
+  if (session.participants.includes(req.user._id)) {
+    throw createError(400, "You are already booked for this class");
+  }
+
+  if (!session.waitingList) session.waitingList = [];
+  if (session.waitingList.includes(req.user._id)) {
+    throw createError(400, "You are already on the waiting list for this class");
+  }
+
+  session.waitingList.push(req.user._id);
+  await session.save();
+
+  // Add confirmation notification
+  await User.findByIdAndUpdate(req.user._id, {
+    $push: {
+      notifications: {
+        title: "Joined Waiting List",
+        message: `You've joined the waiting list for ${session.type} on ${new Date(session.date).toLocaleDateString()} at ${session.time}. We'll notify you as soon as a seat opens.`,
+        date: new Date(),
+        read: false,
+        type: "waitlist",
+      },
+    },
+  });
+
+  res.json({ message: "Successfully joined waiting list", session });
+};
+
+// @desc    Leave class waiting list
+// @route   DELETE /api/sessions/waitlist/:id
+// @access  Private
+export const leaveWaitingList = async (req, res) => {
+  const session = await Session.findById(req.params.id);
+  if (!session) throw createError(404, "Session not found");
+
+  session.waitingList = (session.waitingList || []).filter(
+    (id) => id.toString() !== req.user._id.toString()
+  );
+  await session.save();
+
+  res.json({ message: "Left waiting list", session });
+};
+
+// @desc    Reschedule a class (Max 2 times, up to 4 hours before)
+// @route   POST /api/sessions/reschedule
+// @access  Private
+export const rescheduleSession = async (req, res) => {
+  const { oldSessionId, newSessionId } = req.body;
+  if (!oldSessionId || !newSessionId) {
+    throw createError(400, "Both old and new session IDs are required");
+  }
+
+  const oldSession = await Session.findById(oldSessionId);
+  const newSession = await Session.findById(newSessionId);
+  if (!oldSession || !newSession) throw createError(404, "Session not found");
+
+  // Check 4-hour rule on old session
+  const oldDateTime = new Date(oldSession.date);
+  const [h, m] = oldSession.time.split(":").map(Number);
+  oldDateTime.setHours(h, m, 0, 0);
+  const diffHours = (oldDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
+  if (diffHours < 4 && diffHours > 0) {
+    throw createError(400, "Rescheduling is only allowed at least 4 hours before class start");
+  }
+
+  // Check max 2 reschedules limit for user
+  const user = await User.findById(req.user._id);
+  const reschedCount = (user.rescheduleCount && user.rescheduleCount.get(oldSessionId.toString())) || 0;
+  if (reschedCount >= 2) {
+    throw createError(400, "Maximum of 2 reschedules allowed for this class");
+  }
+
+  // Check new session capacity
+  if (newSession.participants.length >= newSession.maxParticipants) {
+    throw createError(400, "The requested new session is full");
+  }
+
+  // Remove from old session
+  oldSession.participants = oldSession.participants.filter(
+    (id) => id.toString() !== req.user._id.toString()
+  );
+  await oldSession.save();
+
+  // Add to new session
+  newSession.participants.push(req.user._id);
+  if (newSession.waitingList) {
+    newSession.waitingList = newSession.waitingList.filter(
+      (id) => id.toString() !== req.user._id.toString()
+    );
+  }
+  await newSession.save();
+
+  // Update reschedule counter
+  if (!user.rescheduleCount) user.rescheduleCount = new Map();
+  user.rescheduleCount.set(newSessionId.toString(), reschedCount + 1);
+
+  // Add notification
+  user.notifications.push({
+    title: "Class Rescheduled",
+    message: `You successfully rescheduled from ${oldSession.type} (${oldSession.time}) to ${newSession.type} on ${new Date(newSession.date).toLocaleDateString()} at ${newSession.time}.`,
+    date: new Date(),
+    read: false,
+    type: "reschedule",
+  });
+  await user.save();
+
+  res.json({
+    message: "Class rescheduled successfully!",
+    oldSession,
+    newSession,
+  });
+};
+
+// @desc    Bulk create classes for the next 7 days (Admin / Staff feature)
+// @route   POST /api/sessions/bulk-create-week
+// @access  Private/Admin
+export const bulkCreateWeeklyClasses = async (req, res) => {
+  const templates = [
+    { time: "07:00", type: "Reformer Core Power", difficulty: "Intermediate", duration: 55, maxParticipants: 8, location: "סטודיו" },
+    { time: "09:00", type: "Classic Mat Pilates", difficulty: "Beginner", duration: 50, maxParticipants: 12, location: "סטודיו" },
+    { time: "11:00", type: "Reformer Flow & Flex", difficulty: "Beginner", duration: 55, maxParticipants: 8, location: "סטודיו" },
+    { time: "17:30", type: "Tower & Cadillac Stretch", difficulty: "Intermediate", duration: 60, maxParticipants: 8, location: "סטודיו" },
+    { time: "19:00", type: "Athletic Reformer", difficulty: "Advanced", duration: 55, maxParticipants: 8, location: "סטודיו" },
+  ];
+
+  const createdSessions = [];
+  const today = new Date();
+
+  for (let i = 0; i < 7; i++) {
+    const classDate = new Date(today);
+    classDate.setDate(today.getDate() + i);
+    const dateStr = classDate.toISOString().split("T")[0];
+
+    for (const tpl of templates) {
+      // Check if session at this date & time already exists
+      const exists = await Session.findOne({
+        date: new Date(dateStr),
+        time: tpl.time,
+        type: tpl.type,
+      });
+
+      if (!exists) {
+        const session = await Session.create({
+          date: new Date(dateStr),
+          time: tpl.time,
+          duration: tpl.duration,
+          type: tpl.type,
+          difficulty: tpl.difficulty,
+          trainer: {
+            name: "Rotem",
+            bio: "Certified Pilates & Mindfulness Master Trainer",
+            photo: "/RotemLogo.png",
+          },
+          description: `Group ${tpl.type} session tailored for ${tpl.difficulty} level students. Focus on balance, breathing, and core stability.`,
+          status: "מתוכנן",
+          location: tpl.location,
+          maxParticipants: tpl.maxParticipants,
+        });
+        createdSessions.push(session);
+      }
+    }
+  }
+
+  res.status(201).json({
+    message: `Successfully created ${createdSessions.length} sessions across the 7-day schedule!`,
+    createdCount: createdSessions.length,
+    sessions: createdSessions,
+  });
 };
