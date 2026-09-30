@@ -310,6 +310,13 @@ export const cancelSession = async (req, res) => {
 export const registerToSession = async (req, res) => {
   console.log("Registering user to session:", req.params.id);
 
+  if (req.user && ["staff", "admin", "trainer"].includes(req.user.role)) {
+    throw createError(
+      403,
+      "Staff members cannot book classes for themselves. Use 'Book for Member' to register a member for this class."
+    );
+  }
+
   const session = await Session.findById(req.params.id);
   if (!session) throw createError(404, "Session not found");
   if (["הושלם", "בוטל"].includes(session.status))
@@ -353,7 +360,7 @@ export const getAllSessionsForThisYearFromSelectedDate = async (req, res) => {
   const end = new Date(`${year + 1}-01-01T00:00:00Z`);
   let sessions = await Session.find({
     date: { $gte: start, $lt: end },
-  }).populate("participants", "username email");
+  }).populate("participants", "username email fullName phone");
 
   sessions = sessions.filter(
     (session) => session.status !== "הושלם" && session.status !== "בוטל"
