@@ -145,6 +145,8 @@ export const verifyMemberOtp = async (req, res) => {
   res.status(200).json({
     message: "OTP verified! Logged in successfully.",
     user,
+    accessToken,
+    refreshToken,
   });
 };
 
@@ -192,7 +194,12 @@ export const loginUser = async (req, res) => {
     maxAge: 24 * 60 * 60 * 1000, // 1 day
   });
 
-  res.status(200).json({ message: "Login successful" });
+  res.status(200).json({
+    message: "Login successful",
+    accessToken,
+    refreshToken,
+    user,
+  });
 };
 
 // @desc    Logout a user
@@ -270,7 +277,7 @@ export const checkIfUserAuthenticated = async (req, res) => {
 // @route   POST /api/auth/refresh
 // @access  Public
 export const refreshToken = async (req, res) => {
-  const token = req.cookies.refreshToken;
+  const token = req.body?.refreshToken || req.cookies?.refreshToken;
   if (!token) throw createError(401, "No refresh token provided");
 
   const blacklisted = await BlacklistedToken.findOne({ token });
@@ -293,5 +300,8 @@ export const refreshToken = async (req, res) => {
     maxAge: 15 * 60 * 1000,
   });
 
-  res.status(200).json({ message: "Access token refreshed" });
+  res.status(200).json({
+    message: "Access token refreshed",
+    accessToken: newAccess,
+  });
 };
